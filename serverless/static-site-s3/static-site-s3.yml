@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create all infrastructure to host static site on the AWS S3
+
+# --[ Section: Parameters]-----------------------------------------------------
+Parameters:
+  DomainName:
+    Type: String
+
+Resources:
+# --[ Section: S3 Bucket: www.example.com]--------------------------------
+  StaticSiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join [ "", ["www.", !Ref DomainName] ]
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error/index.html
+    DeletionPolicy: Retain
+
+# --[ Section: S3 Bucket: example.com (Redirect (301): no-www -> www)]----
+  StaticSiteNoWWWBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DomainName
+      AccessControl: BucketOwnerFullControl
+      WebsiteConfiguration:
+        RedirectAllRequestsTo:
+          HostName: !Ref StaticSiteBucket
+
+# --[ Section: Make S3 bucket with Static Site public ]------------------------
+  StaticSiteBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Join [ "", ["www.", !Ref DomainName] ]
+      PolicyDocument: 
+        Statement: 
+          - 
+            Action: 
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Join [ "", [ "arn:aws:s3:::", "www.", !Ref DomainName, "/*" ] ]
+            Principal: "*"
+
+# --[ Section: Route53 RecordSet settings pointed to the Static site on S3 ]---
+# HostedZoneId See: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html
+# HostedZoneID 4 Cloudfront - Z2FDTNDATAQYW2
+  # StaticSiteDNSRecord:
+  #   Type: AWS::Route53::RecordSet
+  #   Properties:
+  #     HostedZoneName: !Join ["", [!Ref DomainName, "."]]
+  #     Comment: Public url to our Static Website on AWS S3
+  #     Name: !Join ['', ['www.', !Ref DomainName]]
+  #     Type: A
+  #     AliasTarget:
+  #       #DNSName: !Join [ "", [ "www.", !Ref DomainName, ".s3-website-", !Ref "AWS::Region", ".amazonaws.com" ] ]
+  #       #DNSName: !GetAtt StaticSiteBucket.DomainName
+  #       DNSName: !Select  [2, !Split [ "/", !GetAtt StaticSiteBucket.WebsiteURL ]]
+  #       HostedZoneId: "Z3AQBSTGFYJSTF"
+  #       EvaluateTargetHealth: false
+
+# --[ Section: Show public url to our Static Site ]----------------------------
+Outputs:
+  StaticSiteDirectURL:
+    Value: !GetAtt StaticSiteBucket.WebsiteURL
+    Description: URL for website hosted on S3 (direct link)
+  StaticSiteDirectHostName:
+    Value: !Select  [2, !Split [ "/", !GetAtt StaticSiteBucket.WebsiteURL ]]
+  # WebsitePublicURL:
+  #   Value: !Ref StaticSiteDNSRecord
+  #   Description: Public url to your site

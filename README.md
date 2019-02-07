@@ -6,7 +6,7 @@
 
 # Amazon Web Services (AWS)
 
-The repository contains various settings, scripts and files related with [AWS](https://aws.amazon.com/).
+The repository contains various settings, scripts and files related with [Amazon Web Services (AWS)](https://aws.amazon.com/).
 
 ## At the beginning...
 

@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create all infrastructure for Email Sender serverless solution
+
+# --[ Section: Parameters]-----------------------------------------------------
+Parameters:
+  Recipient:
+    Type: String
+  Sender:
+    Type: String
+  ApiKeys:
+    Type: String
+  ApiRootPath:
+    Type: "String"
+    AllowedPattern: "^[a-z0-9]+$"
+    Default: "notification"
+
+Resources:
+# --[ Section: Resources.Roles]------------------------------------------------
+  EmailSenderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Statement:
+              Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "arn:aws:logs:*:*:*"
+        - PolicyName: lambda
+          PolicyDocument:
+            Statement:
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: "arn:aws:lambda:*:*:*"
+        - PolicyName: sendEmails
+          PolicyDocument:
+            Statement:
+              Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+
+# --[ Section: Resources.Lambda]-----------------------------------------------
+  EmailSenderLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: EmailSender
+      Description: Lambda function to send an Email using AWS SES
+      Handler: index.handler
+      MemorySize: 128
+      Role: !GetAtt ["EmailSenderRole", "Arn"]
+      Runtime: nodejs8.10
+      Timeout: 60
+      Code:
+        ZipFile: |
+          //------------------------------------------------------
+          'use strict';
+          const AWS = require('aws-sdk');
+          const SENDER = process.env.SENDER || '';
+          const RECIPIENT = process.env.RECIPIENT || '';
+          const API_KEYS = (process.env.API_KEYS || '').split(',')
+          exports.handler = async function(event, context, callback) {
+              const isApiGatewayRequest = !!event.httpMethod;     // Direct lambda call or API Gateway call
+              const reqBodyParams = (isApiGatewayRequest ? JSON.parse(event.body) : event);
+              const reqApiKey = reqBodyParams.api_key || '';
+              const result = { statusCode: 200, body: 'Success', headers: {'Access-Control-Allow-Origin':'*'}};
+              try {
+                  if (!API_KEYS.includes(reqApiKey)) {
+                      throw new Error(`Incorrect API key: ${reqApiKey}`);
+                  }
+                  if (!SENDER || !RECIPIENT) {
+                      console.error(`Please specify system environment: SENDER and RECIPIENT`);
+                      throw new Error(`Internal server error`);
+                  }
+                  AWS.config.update({ region: process.env.AWS_REGION || 'us-east-1' });
+                  console.info(`Send Email: Sender=${SENDER}, Recipients=${RECIPIENT}, ApiKey=${reqApiKey}, HttpRequest=${isApiGatewayRequest}`);
+                  console.info(`Parameters=${JSON.stringify(reqBodyParams)}`);
+
+                  const mailParameters = {
+                      Destination: {ToAddresses: [RECIPIENT]},
+                      Source: SENDER,
+                      Message: {
+                          Subject: {Charset: "UTF-8", Data: reqBodyParams.subject || 'Test email from AWS lambda'},
+                          Body: { Text: {Charset: 'UTF-8', Data: reqBodyParams.body || ''} }
+                      }
+                  };
+                  const response = await (new AWS.SES({apiVersion: '2010-12-01'})).sendEmail(mailParameters).promise();
+                  console.info(`Send Email - success. AWS SES response ID: ${response.MessageId}`);
+              } catch (err) {
+                  result.statusCode = 500;
+                  result.body = err.msg || err.message || `Failed`;
+                  console.error(err, err.stack);
+                  // for API Gateway we need suppress exception and return JSON error
+                  if (!isApiGatewayRequest) {
+                      callback(new Error(result.body));
+                      return;
+                  }
+              }
+              callback(null, result);
+          };
+          //------------------------------------------------------
+      Environment:
+        Variables:
+          API_KEYS: !Ref ApiKeys
+          RECIPIENT: !Ref Recipient
+          SENDER: !Ref Sender
+
+# --[ Section: ApiGateway ]----------------------------------------------------
+  EmailSenderApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: EmailSenderApi
+      Description: "Api to send emails using AWS Lambda function and AWS SES"
+
+# --[ Section: Method - POST ]-------------------------------------------------
+  EmailSenderApiPost:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      HttpMethod: POST
+      ResourceId: !GetAtt EmailSenderApiGateway.RootResourceId
+      RestApiId: !Ref EmailSenderApiGateway
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailSenderLambdaArn}/invocations"
+          - EmailSenderLambdaArn: !GetAtt "EmailSenderLambda.Arn"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+      - ResponseModels:
+          application/json: Empty
+        ResponseParameters:
+          method.response.header.Access-Control-Allow-Headers: true
+          method.response.header.Access-Control-Allow-Methods: true
+          method.response.header.Access-Control-Allow-Origin: true
+        StatusCode: 200
+
+# --[ Section: Method - OPTIONS -> Enable CORS ]-------------------------------
+  EmailSenderApiOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      HttpMethod: OPTIONS
+      ResourceId: !GetAtt EmailSenderApiGateway.RootResourceId
+      RestApiId: !Ref EmailSenderApiGateway
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+            StatusCode: 200
+        PassthroughBehavior: NEVER
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: 200
+
+# --[ Section: Api Gateway Deployment ]----------------------------------------
+  EmailSenderApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - EmailSenderApiPost
+    Properties:
+      RestApiId: !Ref EmailSenderApiGateway
+      StageName: !Ref ApiRootPath
+
+  EmailSenderApiGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt "EmailSenderLambda.Arn"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${EmailSenderApiGateway}/*/POST/"
+
+# --[ Section: Show a public url to our Api ]----------------------------------
+Outputs:
+  ApiGatewayInvokeURL:
+    Value: !Sub "https://${EmailSenderApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiRootPath}"
+    Description: Public url which you can use to send an email using a POST request

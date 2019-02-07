@@ -1,0 +1,60 @@
+<html>
+<head>
+    <script>
+        function send_email(apiUrl, apiKey, subjectText, bodyText) {
+            const log = document.getElementById("log");
+            log.innerHTML = "Sending...";
+            log.style.display = "block";
+            console.info(`Send email using post request to ${apiUrl}`);
+            const message= {
+                "api_key": apiKey,
+                "subject": subjectText,
+                "body": bodyText,
+            }
+            console.info(`Message: ${JSON.stringify(message)}`);
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4) {
+                    let responseResultText = '';
+                    if (this.status == 200) {
+                        responseResultText = this.responseText;
+                        console.info(responseResultText);
+                    } else if (this.status == 0) {
+                        responseResultText = `ERROR: Incorrect parameters`;
+                        console.error(responseResultText);
+                    } else {
+                        responseResultText = `ERROR: [${this.status}] ${this.responseText}`;
+                        console.error(responseResultText);
+                    }
+                    log.innerHTML = responseResultText;
+                }
+            };
+            xhttp.open("POST", apiUrl);
+            xhttp.setRequestHeader("Content-Type", "application/json");
+            xhttp.send(JSON.stringify(message));
+        }
+    </script>
+    <style>
+        body { margin: 10px 15%; padding: 20px; font-size: 120%; border: 1px solid #888; }
+        input { width: 90%; font-size: 100%; }
+        button { padding: 5px 20px; font-size: 100%; }
+        .title { display: inline-block; width: 80px; font-weight: bold; }
+        .center { text-align: center; }
+        #log { display: none; margin: 10px; padding: 5px 0; border-top: 1px solid #666666; font-weight: normal; font-size: 80%; }
+    </style>
+</head>
+<body>
+    <h2 class="center">Send test message</h2>
+    <p><span class="title">Api Url:</span><input type="text" id="apiUrl" name="apiUrl" placeholder="Api Url"
+            value="https://xxxxxxxxxxxx.execute-api.us-east-1.amazonaws.com/notification" /></p>
+    <p><span class="title">Api Key:</span><input type="text" id="apiKey" name="apiKey" placeholder="Api key"
+                                    value="9cc14251a6094f92ab96656761a68194" /></p>
+    <p><span class="title">Subject:</span><input type="text" id="subject" name="subject" placeholder="Subject..."
+                                        value="Sample email from the WEB" /></p>
+    <p><span class="title">Body:</span><input type="text" id="bodyText" name="bodyText" placeholder="Body..."
+                                     value="Email body text" /></p>
+    <p class="center"><button onclick="send_email(apiUrl.value, apiKey.value, subject.value, bodyText.value);">Send</button></p>
+    <div id="log"> </div>
+</body>
+</html>

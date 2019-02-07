@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create cloudformation for static site
+
+# --[ Section: Parameters]-----------------------------------------------------
+Parameters:
+  DomainName:
+    Type: String
+  CertificateArn:
+    Type: String
+    AllowedPattern: "arn:aws:acm:.*",
+Resources:
+# --[ Section: Cloud Front for Static Site based on S3 ]-----------------------
+  StaticSiteCDN:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Comment: CDN for S3-bucket static site
+        Origins:
+          # Origins for StaticSite on S3 has a specific format:
+          # www.<domainname>.s3-website-<region>.amazonaws.com
+          # example: www.example.com.s3-website-us-east-1.amazonaws.com
+          # "www." + example.com + ".s3-website-" + us-east-1 + ".amazonaws.com"
+        - DomainName: !Join [ "", [ "www.", !Ref DomainName, ".s3-website-", !Ref "AWS::Region", ".amazonaws.com" ] ]
+          Id: StaticSiteS3Origin
+          CustomOriginConfig:
+            OriginProtocolPolicy: http-only
+        Aliases:
+          - !Join [ "", [ "www.", !Ref DomainName ] ]
+        Enabled: 'true'
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: StaticSiteS3Origin
+          DefaultTTL: 5
+          MaxTTL: 30
+          ForwardedValues:
+            QueryString: false
+          ViewerProtocolPolicy: redirect-to-https
+        CustomErrorResponses:
+        - ErrorCode: '404'
+          ResponsePagePath: "/error/index.html"
+          ResponseCode: '200'
+          ErrorCachingMinTTL: '30'
+        ViewerCertificate:
+          # CloudFrontDefaultCertificate: 'true'
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+
+# --[ Section: Route53 RecordSet settings pointed to Cloudfront distribution ]-
+  StaticSiteDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Join ["", [!Ref DomainName, "."]]
+      Comment: Route for our Static Website (pointed to the Cloudfront pointed on S3-bucket static site).
+      Name: !Join ['', ['www.', !Ref DomainName]]
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt StaticSiteCDN.DomainName
+        HostedZoneId: "Z2FDTNDATAQYW2"
+
+  StaticSiteDNSRecordWithoutWWW:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Join ["", [!Ref DomainName, "."]]
+      Comment: Route for our Static Website (pointed to the Cloudfront pointed on S3-bucket static site).
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt StaticSiteCDN.DomainName
+        HostedZoneId: "Z2FDTNDATAQYW2"
+
+# --[ Section: Show url related with StaticSiteCDN ]---------------------------
+Outputs:
+  WebsitePublicURL:
+    Value: !Join ['', ['https://', !Ref StaticSiteDNSRecord]]
+    Description: The URL of the newly created Static Website
+  WebsiteDomainName:
+    Value: !Ref StaticSiteDNSRecord
+
