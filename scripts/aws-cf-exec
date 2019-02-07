@@ -1,0 +1,98 @@
+#!/bin/sh
+#==============================================================================
+## Helper script for aws-cli to execute cloud formation file
+## Usage {SCRIPT_NAME} <stack name> <cloud formation script path> [parameters for cloud formation script]
+#==============================================================================
+SCRIPT_DIR=$(dirname "$0")
+STACK_NAME=${1:-"help"}
+CLOUDFORMATION_SCRIPT=file://${2}
+
+show_help() {
+    sed -n '/^##/,/^$/s/^## \{0,1\}//p' "$0" | sed 's/{SCRIPT_NAME}/'"${0##*/}"'/g'
+    exit 255
+}
+
+is_stack_exists() {
+    aws cloudformation describe-stacks --stack-name "${STACK_NAME}" 2>/dev/null >/dev/null
+    if [ $? -eq 0 ]; then
+        echo "Stack ${STACK_NAME} exists."
+        return 0
+    fi
+    echo "Can't find ${STACK_NAME} stack."
+    return 1
+}
+
+create_stack() {
+    echo "Creating new CloudFormation stack '${STACK_NAME}'..."
+    aws cloudformation create-stack --stack-name "${STACK_NAME}" \
+        --capabilities CAPABILITY_IAM \
+        --template-body "${CLOUDFORMATION_SCRIPT}" ${PARAMETERS}
+    errcode=$?
+    if [ $errcode -eq 0 ]; then
+        echo "Waiting..."
+        aws cloudformation wait stack-create-complete --stack-name "${STACK_NAME}" \
+            && echo "Operation complete" \
+            && echo "--------------------------------------------------" \
+            && aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+            && echo "--------------------------------------------------" \
+            && echo "Success"
+
+            #| jq '{"StackName":.Stacks[0].StackName,"a":.Stacks[0].Outputs[0].OutputValue}'
+    else
+        echo "Error: code=${errcode}"
+        return ${errcode}
+    fi
+}
+
+update_stack() {
+    #name=${STACK_NAME}-$(date +"%Y%m%d-%H%M%S")
+    echo "Creating new CloudFormation change stack '${STACK_NAME}'..."
+    # aws cloudformation create-change-set --change-set-name "${STACK_NAME}" \
+    aws cloudformation update-stack --stack-name "${STACK_NAME}" \
+        --capabilities CAPABILITY_IAM \
+        --template-body "${CLOUDFORMATION_SCRIPT}" ${PARAMETERS}
+    errcode=$?
+    if [ $errcode -eq 0 ]; then
+        echo "Waiting..."
+        # aws cloudformation wait change-set-create-complete --change-set-name "${STACK_NAME}" && echo "Operation complete"
+        aws cloudformation wait stack-update-complete --stack-name "${STACK_NAME}" \
+            && echo "Operation complete" \
+            && echo "--------------------------------------------------" \
+            && aws cloudformation describe-stacks --stack-name "${STACK_NAME}"
+    else
+        echo "Error: code=${errcode}"
+        return ${errcode}
+    fi
+}
+
+case "${STACK_NAME}" in
+    help|--help) show_help ;;
+esac
+if [ -z "${1}" ] || [ -z "${2}" ]; then
+    show_help
+fi
+# we need all parameters from the 3 position
+shift
+shift
+PARAMETERS=$@
+
+echo "Tool will create/update AWS Cloud Formation stack with a specific script"
+echo "----------------------------------------"
+echo "STACK_NAME     = ${STACK_NAME}"
+echo "CLOUDFORMATION = ${CLOUDFORMATION_SCRIPT}"
+echo "PARAMETERS     = ${PARAMETERS:-"<EMPTY>"}"
+echo "----------------------------------------"
+read -n 1 -p "Continue execution (Y/n)? " opt
+echo ""
+if [ "${opt:-"y"}" == "y" ] || [ "${opt}" == "Y" ]; then
+    if [ -n "${PARAMETERS}" ]; then
+        PARAMETERS="--parameters ${PARAMETERS}"
+    fi
+    if is_stack_exists "${STACK_NAME}"; then
+        update_stack
+    else
+        create_stack
+    fi
+else
+    echo "Skip"
+fi

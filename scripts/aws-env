@@ -1,0 +1,156 @@
+#!/bin/bash
+#==============================================================================
+## Script to get/put key-value pair.
+## Working with AWS Parameter Store and/or local file system.
+##
+## Usage: {SCRIPT_NAME} <command> <key-name> [options]
+## Commands:
+##   put        - put/save value to the AWS Parameter Store or to a local file
+##   get        - get/load value from the AWS Parameter Store or from local file
+##   help       - show help screen
+##
+## Options:
+##   -t <type>  - parameter type to add a value to AWS Parameter Store
+##                Allowed values for type: String, StringList, SecureString
+##   -v <value> - value which you want to add
+##   -d <text>  - information about the parameter that you want to add
+##   --aws      - work with AWS Parameter Store only without local file system
+##   --local    - work with local file system only (default is /etc directory)
+##   --debug    - show all messages into the stderr
+##
+#  Author   : Evgen Rusakov
+#  Date     : 2018-10-20
+#==============================================================================
+CONFIG_LOCATION=${LOCATION:-"/etc"}
+DEBUG=0
+
+show_help() {
+    sed -n '/^##/,/^$/s/^## \{0,1\}//p' "$0" | sed 's/{SCRIPT_NAME}/'"${0##*/}"'/g'
+    exit 255
+}
+
+debug() {
+    if [ ${DEBUG} -ne 0 ]; then
+        >&2 echo "${1}"
+    fi
+}
+
+put_aws_parameter() {
+    name=${1}
+    value=${2}
+    type=${3:-"String"}
+    description=${4}
+    debug "Putting value to the AWS Property Store, name=${name}..."
+    aws ssm put-parameter --name ${name} --value "${value}" \
+        --type ${type:-"String"} --description "${description}" \
+        --overwrite --output text >/dev/null && echo "Write '${name}' - success."
+    if [ $? -eq 0 ]; then
+        debug "Putting - success"
+    else
+        debug "Putting - failed"
+        return 1
+    fi
+}
+
+get_aws_parameter() {
+    name=${1}
+    debug "Reding value from AWS Property Store, name=${name}..."
+    val=$(aws ssm get-parameter --query Parameter.Value --output text --name "${name}" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        debug "Value: ${val}"
+        echo ${val}
+    else
+        debug "Error read value from the AWS Property Store"
+        return 1
+    fi
+}
+
+put_sys_parameter() {
+    name=${1}
+    value=${2}
+    path=${CONFIG_LOCATION}/${name}
+    debug "Writing value to the ${path} file..."
+    dir=$(dirname "${path}")
+    [ ! -d "${dir}" ] && mkdir -p "${dir}"
+    echo "${value}" > "${path}"
+    if [ $? -eq 0 ]; then
+        debug "Writing - success"
+    else
+        debug "Writing - failed"
+        return 1
+    fi
+}
+
+get_sys_parameter() {
+    name=${1}
+    path=${CONFIG_LOCATION}/${name}
+    debug "Reding value from ${path} file..."
+    if [ -f "${path}" ]; then
+        val=$(cat "${path}")
+        debug "Value: ${val}"
+        echo "${val}"
+    else
+        debug "File ${path} not found"
+        return 1
+    fi
+}
+
+cmd=${1:-"help"}
+key_name=${2}
+type=
+value=
+descr=
+need_aws=0
+need_local=0
+shift; shift
+for arg in "$@"; do
+    [ -z "${1}" ] && break
+    case "${1}" in
+        --type|-t) shift; type=${1}; shift ;;
+        --value|-v) shift; value=${1}; shift ;;
+        --descr|-d) shift; descr=${1}; shift ;;
+        --aws) need_aws=1; shift ;;
+        --local) need_local=1; shift ;;
+        --debug|-D) DEBUG=1 ;;
+        *) echo "Error: Unknown argument '${1}'"; echo ""; show_help ;;
+    esac
+done
+[ ${need_aws} -eq 0 ] && [ ${need_local} -eq 0 ] && need_aws=1 && need_local=1
+
+debug "Parameters:"
+debug "Command      : ${cmd}"
+debug "Key name     : ${key_name}"
+debug "Value        : ${value}"
+debug "Type         : ${type}"
+debug "Description  : ${descr}"
+debug "AWS mode     : ${need_aws}"
+debug "Local FS mode: ${need_local}"
+
+case "${cmd}" in
+    get|read|load)
+        [ -z "${key_name}" ] && show_help
+        result=
+        if [ ${need_local} -eq 1 ]; then
+            result=$(get_sys_parameter "${key_name}")
+        fi
+        if [ ${need_aws} -eq 1 ]; then
+            if [ -z "${result}" ]; then
+                result=$(get_aws_parameter "${key_name}")
+            else
+                debug "We have a value from the local storage. Skip reading AWS."
+            fi
+        fi
+        echo "${result}"        
+        ;;
+    put|write|save)
+        [ -z "${key_name}" ] && show_help
+        if [ ${need_aws} -eq 1 ]; then
+            put_aws_parameter "${key_name}" "${value}" "${type}" "${descr}"
+        fi
+        if [ ${need_local} -eq 1 ]; then
+            put_sys_parameter "${key_name}" "${value}" 
+        fi
+        ;;
+    help|--help|-help|-h) show_help ;;
+    *) echo "Error: Unknown command '${1}'"; echo ""; show_help ;;
+esac

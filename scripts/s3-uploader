@@ -1,0 +1,32 @@
+#!/bin/sh
+#==============================================================================
+## Upload all content from a specific directory to AWS S3 Bucket
+##
+## Usage: {SCRIPT_NAME} <S3 bucket name> [source directory]
+##
+#==============================================================================
+BUCKET_NAME=${1:-"help"}
+SOURCE_DIR=${2:-"${PWD}"}
+
+case "${BUCKET_NAME}" in
+    help|--help)
+        sed -n '/^##/,/^$/s/^## \{0,1\}//p' "$0" | sed 's/{SCRIPT_NAME}/'"${0##*/}"'/g'
+        exit 255
+        ;;
+esac
+
+echo "Upload all content from a specific directory to the AWS S3 Bucket"
+echo "Local directory  = ${SOURCE_DIR}"
+echo "S3 Bucket name   = ${BUCKET_NAME}"
+read -n 1 -p "All data in the ${BUCKET_NAME} bucket will be updated. Continue (Y/n)? " opt
+echo ""
+if [ "${opt:-"y"}" == "y" ] || [ "${opt}" == "Y" ]; then
+    cd ${SOURCE_DIR}
+    echo "Uploading files from ${PWD} to s3://${BUCKET_NAME}..."
+    aws s3 sync --acl public-read --delete --exclude '.*' "${PWD}" s3://${BUCKET_NAME} \
+        && echo "[OK ] Upload complete"
+    cd - >/dev/null
+else
+    echo "Skip"
+fi
+
