@@ -1,6 +1,6 @@
 <br/>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/revgen/aws/master/aws.png">
+  <img src="https://github.com/revgen/aws-repository/blob/master/aws.png?raw=true">
 </p>
 <br/>
 
