@@ -9,6 +9,13 @@ The repository contains settings for creating a serverless solution to send an n
 
 To create an email addres in the AWS SES:
 * You can use [AWS Console](https://console.aws.amazon.com/ses/home#verified-senders-email:)
+    - Open: AWS Console
+    - Open: Simple Email Service (SES)
+    - Open: Email Addresses
+    - Press: Verify a New Email address
+
+or
+
 * You can use [AWS command line tool](https://aws.amazon.com/cli/)
 ```bash
 aws ses verify-email-identity --email-address john.smith@test.com
