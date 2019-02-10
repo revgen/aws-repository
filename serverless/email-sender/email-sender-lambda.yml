@@ -9,6 +9,9 @@ Parameters:
     Type: String
   ApiKeys:
     Type: String
+    Default: "fe46486fa07d4b77b95f56a37e86b230,fe46486fa07d4b77b95f56a37e86b321"
+  RecaptchaSecretKey:
+    Type: String
   ApiRootPath:
     Type: "String"
     AllowedPattern: "^[a-z0-9]+$"
@@ -69,36 +72,106 @@ Resources:
           //------------------------------------------------------
           'use strict';
           const AWS = require('aws-sdk');
+          const https = require('https');
+          const querystring = require('querystring');
+
           const SENDER = process.env.SENDER || '';
           const RECIPIENT = process.env.RECIPIENT || '';
           const API_KEYS = (process.env.API_KEYS || '').split(',')
+          const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '';
+
+          const checkRecaptcha = async (secret, sourceIp, recaptchaResponse) => {
+              return new Promise((resolve, reject) => {
+                  console.info(`CheckRecaptcha: RecaptchaResponse = ${recaptchaResponse}`);
+                  console.info(`CheckRecaptcha: SourceIP = ${sourceIp}`);
+                  const postData = querystring.stringify({
+                      "secret": secret,
+                      "response": recaptchaResponse,
+                      "remoteip": sourceIp
+                  });
+                  console.debug(`CheckRecaptcha: Data = ${postData}`);
+
+                  const requestOptions = {
+                      host: 'www.google.com',
+                      path: '/recaptcha/api/siteverify',
+                      method: 'POST',
+                      port: 443,
+                      headers: {
+                          "Content-type": "application/x-www-form-urlencoded",
+                          'Content-Length': postData.length
+                      }
+                  };
+                  const postRequest = https.request(requestOptions, (res) => {
+                      console.debug(`Recaptcha Response: Status = ${res.statusCode}`);
+                      console.debug(`Recaptcha Response: Headers = ${JSON.stringify(res.headers)}`);
+                      res.setEncoding('utf8');
+                      res.on('data', (body) => {
+                        console.debug(`Recaptcha Response: Body = ${JSON.stringify(body)}`);
+                        try {
+                            const response = JSON.parse(body);
+                            if (response.success) {
+                              resolve(response);
+                            } else {
+                              console.error(`Recaptcha Response: Error (1): ${body}`);
+                              reject({success: false, message: "Recaptcha validation failed."});
+                            }
+                        } catch (err) {
+                          console.error(`Recaptcha Response: Error (2): ${body}`);
+                          reject({success: false, message: "Recaptcha validation failed."});
+                        }
+                      });
+                      res.on('error', (err) => {
+                          console.error(`Recaptcha Response: Error (3): ${err.message}`);
+                          reject({success: false, message: "Recaptcha validation failed."});
+                      });
+                  });
+                  postRequest.write(postData);
+                  postRequest.end();
+              });
+          }
+
           exports.handler = async function(event, context, callback) {
+              AWS.config.update({ region: process.env.AWS_REGION || 'us-east-1' });
               const isApiGatewayRequest = !!event.httpMethod;     // Direct lambda call or API Gateway call
               const reqBodyParams = (isApiGatewayRequest ? JSON.parse(event.body) : event);
               const reqApiKey = reqBodyParams.api_key || '';
               const result = { statusCode: 200, body: 'Success', headers: {'Access-Control-Allow-Origin':'*'}};
               try {
-                  if (!API_KEYS.includes(reqApiKey)) {
+                  if (!API_KEYS) {
+                      console.info(`API_KEYS system environment are empty. Skip check api_key parameter.`);
+                  } else if (!API_KEYS.includes(reqApiKey)) {
                       throw new Error(`Incorrect API key: ${reqApiKey}`);
                   }
                   if (!SENDER || !RECIPIENT) {
                       console.error(`Please specify system environment: SENDER and RECIPIENT`);
                       throw new Error(`Internal server error`);
                   }
-                  AWS.config.update({ region: process.env.AWS_REGION || 'us-east-1' });
-                  console.info(`Send Email: Sender=${SENDER}, Recipients=${RECIPIENT}, ApiKey=${reqApiKey}, HttpRequest=${isApiGatewayRequest}`);
+                  if (!RECAPTCHA_SECRET_KEY) {
+                      console.error(`Please specify system environment: RECAPTCHA_SECRET_KEY`);
+                      throw new Error(`Internal server error`);
+                  }
+                  console.info(`Send Email: Sender=${SENDER}, Recipients=${RECIPIENT}, ApiKey=${reqApiKey}, HttpRequest=${isApiGatewayRequest},`);
                   console.info(`Parameters=${JSON.stringify(reqBodyParams)}`);
 
-                  const mailParameters = {
-                      Destination: {ToAddresses: [RECIPIENT]},
-                      Source: SENDER,
-                      Message: {
-                          Subject: {Charset: "UTF-8", Data: reqBodyParams.subject || 'Test email from AWS lambda'},
-                          Body: { Text: {Charset: 'UTF-8', Data: reqBodyParams.body || ''} }
-                      }
-                  };
-                  const response = await (new AWS.SES({apiVersion: '2010-12-01'})).sendEmail(mailParameters).promise();
-                  console.info(`Send Email - success. AWS SES response ID: ${response.MessageId}`);
+                  console.info(`recaptchaResponse = ${reqBodyParams.recaptchaResponse}`);
+                  const sourceIp = event.requestContext ? event.requestContext.identity.sourceIp : 'localhost';
+                  const recaptchaCheckerData = await checkRecaptcha(RECAPTCHA_SECRET_KEY, sourceIp, reqBodyParams.recaptchaResponse);
+                  console.info(`Recaptcha Checker Data: ${JSON.stringify(recaptchaCheckerData)}`);
+                  if (recaptchaCheckerData.success) {
+                      const mailParameters = {
+                          Destination: {ToAddresses: [RECIPIENT]},
+                          Source: SENDER,
+                          Message: {
+                              Subject: {Charset: "UTF-8", Data: reqBodyParams.subject || 'Test email from AWS lambda'},
+                              Body: { Text: {Charset: 'UTF-8', Data: reqBodyParams.body || ''} }
+                          }
+                      };
+                      const response = await (new AWS.SES({apiVersion: '2010-12-01'})).sendEmail(mailParameters).promise();
+                      console.info(`Send Email - success. AWS SES response ID: ${response.MessageId}`);
+                  } else {
+                      console.error("Recaptcha error");
+                      throw new Error(`Internal server error`);
+                  }
               } catch (err) {
                   result.statusCode = 500;
                   result.body = err.msg || err.message || `Failed`;
@@ -117,6 +190,7 @@ Resources:
           API_KEYS: !Ref ApiKeys
           RECIPIENT: !Ref Recipient
           SENDER: !Ref Sender
+          RECAPTCHA_SECRET_KEY: !Ref RecaptchaSecretKey
 
 # --[ Section: ApiGateway ]----------------------------------------------------
   EmailSenderApiGateway:

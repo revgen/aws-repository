@@ -1,7 +1,5 @@
 # EmailSender AWS serverless service
 
-TODO: Add reCaptcha
-
 The repository contains settings for creating a serverless solution to send an notification using AWS infrastructure.
 
 
@@ -22,6 +20,15 @@ aws ses verify-email-identity --email-address john.smith@test.com
 ```
 When the email address will be added you will receive a confirmation email.
 
+## Setup reCAPTCHA
+
+1. Create API keys: https://www.google.com/recaptcha
+2. Use an instruction from the Step #1 to setup client side code
+3. Use an instruction form the Step #2 to setup AWS Lambda side
+4. Don't forget add items to the domains list:
+    * <your domain name>
+    * amazon.com
+    * amazonws.com
 
 ## Create AWS infrastructure for EmailSender
 
@@ -32,7 +39,10 @@ aws cloudformation create-stack --stack-name "EmailSenderStack" \
         --template-body "./email-sender-lambda.yml" \
         --parameters \
             ParameterKey=Recipient,ParameterValue="<Recepient email adddress>" \
-            ParameterKey=Sender,ParameterValue="<Sender email adddress>"
+            ParameterKey=Sender,ParameterValue="<Sender email adddress>" \
+            ParameterKey=RecaptchaSecretKey,ParameterValue="<Recaptcha Secret Key>" \
+            ParameterKey=ApiRootPath,ParameterValue="notification"
+
 ```
 
 Additional parameters which you can use:
@@ -51,4 +61,4 @@ Open it in your browser, fill all fields and send a test message.
 
 * [Amazon Simple Email Service](https://aws.amazon.com/ses/)
 * [Create Dynamic Contact Forms for AWS S3 using AWS SES](https://aws.amazon.com/blogs/architecture/create-dynamic-contact-forms-for-s3-static-websites-using-aws-lambda-amazon-api-gateway-and-amazon-ses/)
-  
+
