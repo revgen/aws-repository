@@ -2,14 +2,23 @@
 <head>
     <script>
         function send_email(apiUrl, apiKey, subjectText, bodyText) {
+            console.info(`Send email request...`);
             const log = document.getElementById("log");
+            const recaptchaControl = document.getElementById("g-recaptcha-response");
+            let recaptchaKey = recaptchaControl.value;
+            console.info(`recaptchaKey = ${recaptchaKey}`);
             log.innerHTML = "Sending...";
             log.style.display = "block";
+            if (!recaptchaKey) {
+                console.info("You seem to be a bot!");
+                return false;
+            }
             console.info(`Send email using post request to ${apiUrl}`);
             const message= {
-                "api_key": apiKey,
+                "apiKey": apiKey,
                 "subject": subjectText,
                 "body": bodyText,
+                "recaptchaResponse": recaptchaKey
             }
             console.info(`Message: ${JSON.stringify(message)}`);
 
@@ -43,6 +52,7 @@
         .center { text-align: center; }
         #log { display: none; margin: 10px; padding: 5px 0; border-top: 1px solid #666666; font-weight: normal; font-size: 80%; }
     </style>
+    <script src="https://www.google.com/recaptcha/api.js"></script> 
 </head>
 <body>
     <form id="recaptcha-contact" action="" method="POST">
@@ -50,11 +60,12 @@
         <p><span class="title">Api Url:</span><input type="text" id="apiUrl" name="apiUrl" placeholder="Api Url"
                 value="https://xxxxxxxxxxxx.execute-api.us-east-1.amazonaws.com/notification" /></p>
         <p><span class="title">Api Key:</span><input type="text" id="apiKey" name="apiKey" placeholder="Api key"
-                                        value="9fe46486fa07d4b77b95f56a37e86b23" /></p>
+                                        value="TESTCALL" /></p>
         <p><span class="title">Subject:</span><input type="text" id="subject" name="subject" placeholder="Subject..."
                                             value="Sample email from the WEB" /></p>
         <p><span class="title">Body:</span><input type="text" id="bodyText" name="bodyText" placeholder="Body..."
                                         value="Email body text" /></p>
+        <div class="g-recaptcha" data-sitekey="6LdCkHoUAAAAAICQskHAyXhHu1oZYbbxlDKlY-ET"></div>
         <p class="center"><button onclick="send_email(apiUrl.value, apiKey.value, subject.value, bodyText.value);return false;">Send</button></p>
         <div id="log"> </div>
     </form>

@@ -1,0 +1,19 @@
+{
+  "name": "EmailSender",
+  "version": "1.0.0",
+  "description": "The repository contains settings for creating a serverless solution to send an notification using AWS infrastructure.",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "npm run test && ./devops/build-package.sh",
+    "deploy": "npm run build && ./devops/deploy-lambda.sh",
+    "test": "./node_modules/.bin/eslint --ignore-path .gitignore .",
+    "clean": "rm -vr ./dist",
+    "clean-all": "npm run clean && rm -r node_modules"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^5.14.1"
+  }
+}
