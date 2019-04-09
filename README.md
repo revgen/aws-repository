@@ -10,14 +10,41 @@ The repository contains various settings, scripts and files related with [Amazon
 
 ## At the beginning...
 
-### AWS resources
+### Amazon resources
 
-* [AWS Console]()
+* [AWS Console](https://aws.amazon.com/console)
+* [Alexa Developer Console](https://developer.amazon.com/alexa)
 
 
-### Amazon Console Tool
+### Amazon Console Tool ([AWS CLI](https://aws.amazon.com/cli))
 
+Install on Mac OS
 ```bash
+brew install awscli
+```
+
+Install on Ubuntu
+```bash
+sudo apt-get install awscli
+```
+
+Install on Windows
+
+* Using installer: [Download the AWS CLI MSI installer for Windows (64-bit)](https://s3.amazonaws.com/aws-cli/AWSCLI64.msi)
+* Using Choco and PowerShell console:
+```powershell
+choco install -y awscli
+$env:Path += ';C:\Program Files\Amazon\AWSCLI'
+```
+
+Install using Python PIP
+```bash
+pip install awscli
+```
+
+First configuration
+```bash
+aws configure
 ```
 
 ## Useful links
