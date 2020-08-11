@@ -5,6 +5,8 @@ The repository contains settings and solutions for creating a simple static webs
   - [Introduction](#introduction)
   - [Setup a local development environment](#setup-a-local-development-environment)
   - [Setup AWS S3 buckets to host a static site](#setup-aws-s3-buckets-to-host-a-static-site)
+      - [Using awscli](#create-s3-bucket-and-setup-a-static-side-using-awscli)
+      - [Using CloudFormation](#create-s3-bucket-and-setup-a-static-side-using-cloudformation-script)
   - [Deploy your static site content to the S3 bucket](#deploy-your-static-site-content-to-the-s3-bucket)
   - [Setup CloudFront and DNS for your static site on S3](#setup-cloudfront-and-dns-for-your-static-site-on-s3)
   - [If you have a problem](#if-you-have-a-problem)
@@ -43,6 +45,43 @@ ls ~/.aws/credentials
 To host your static site on the AWS S3 you need create two S3 buckets. 
 First should have a WWW prefix (main bucket), the second shouldn't have a WWW prefix and will redirect to the main bucket.
 
+### Create S3 Bucket and Setup a static side using awscli
+```bash
+echo "For example we will use 'www.example.com' as a bucket name"
+
+echo "Create policy rules file for the future bucket"
+echo '{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "PublicReadGetObject",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::www.example.com/*"
+        }
+    ]
+}' > /tmp/s3_bucket_policy.json
+
+echo "Create bucket and setup policy"
+aws s3api create-bucket --bucket www.example.com \
+  && aws s3api put-bucket-policy --bucket www.example.com --policy file:///tmp/s3_bucket_policy.json \
+  && aws s3 sync ./src/example.com s3://www.example.com/ \
+  && aws s3 website s3://www.example.com/ --index-document index.html --error-document error.html
+
+echo "The result direct static site url will be: <bucket-name>.s3-website.<AWS-region>.amazonaws.com"
+echo "For our example it will be: http://www.sample.com.s3-website.us-east-1.amazonaws.com"
+```
+
+If you need a redirect from one s3 bucket to another, example "sample.com" -> "www.sample.com", you can use a code:
+```bash
+aws s3api create-bucket --bucket sample.com
+printf '{"RedirectAllRequestsTo":{"HostName": "%s"}}\n' 'www.sample.com' > /tmp/s3_bucket_redirect.json
+aws s3api put-bucket-website --bucket sample.com --website-configuration file:///tmp/s3_bucket_redirect.json
+```
+
+
+### Create S3 Bucket and Setup a static side using CloudFormation script
 To create these two S3 buckets and all related resources you can use a CloudFormation script [static-site-s3.yml](./static-site-s3.yml).
 
 Example usage:
