@@ -1,0 +1,4 @@
+- [ ] Show better error to the cleint side (field required and etc.)
+- [ ] Add an ability to show debug page directly from the Lambda (GET request with apiKey)
+- [ ] Substitute recaptcha client key and api url automatically.
+- [ ] Finish script 'create-aws-iam-role-and-policies.sh' to create POST and GET methods and CORS
